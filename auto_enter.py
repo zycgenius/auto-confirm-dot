@@ -13,7 +13,7 @@ user32 = ctypes.windll.user32
 # Author: zyc - Auto Confirm Dot
 # Created by zycgeniuszycgenius
 __author__ = "zyc"
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __zyc_watermark__ = "zyc"  # Electronic watermark by zyc
 
 def get_cursor_pos():
@@ -78,13 +78,17 @@ class AutoClicker:
         self.paused = True
         self.running = True
         self.count = 0
+        self.interval = 10.0  # 默认间隔10秒
         self._stop_event = threading.Event()
         self._zyc_instance_tag = "zyc"  # Instance watermark
 
+        # 拖动相关
+        self.drag_data = {'x': 0, 'y': 0, 'moved': False}
+
         # 事件绑定
-        self.drag_data = {'x': 0, 'y': 0}
-        self.canvas.bind('<Button-1>', self.start_drag)
-        self.canvas.bind('<B1-Motion>', self.do_drag)
+        self.canvas.bind('<Button-1>', self.on_left_click)
+        self.canvas.bind('<B1-Motion>', self.on_drag)
+        self.canvas.bind('<ButtonRelease-1>', self.on_left_release)
         self.canvas.bind('<Button-3>', self.toggle_pause)   # 右键暂停/继续
         self.canvas.bind('<Double-Button-1>', self.stop_program)  # 双击关闭
 
@@ -109,14 +113,66 @@ class AutoClicker:
         except Exception:
             pass
 
-    def start_drag(self, event):
+    def on_left_click(self, event):
+        """左键按下"""
         self.drag_data['x'] = event.x
         self.drag_data['y'] = event.y
+        self.drag_data['moved'] = False
 
-    def do_drag(self, event):
-        x = self.root.winfo_x() + (event.x - self.drag_data['x'])
-        y = self.root.winfo_y() + (event.y - self.drag_data['y'])
+    def on_drag(self, event):
+        """拖动"""
+        dx = event.x - self.drag_data['x']
+        dy = event.y - self.drag_data['y']
+        if abs(dx) > 3 or abs(dy) > 3:
+            self.drag_data['moved'] = True
+        x = self.root.winfo_x() + dx
+        y = self.root.winfo_y() + dy
         self.root.geometry(f"+{x}+{y}")
+
+    def on_left_release(self, event):
+        """左键释放，如果没移动则弹出设置"""
+        if not self.drag_data['moved']:
+            self.show_interval_dialog()
+
+    def show_interval_dialog(self):
+        """显示间隔设置对话框"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Set Interval")
+        dialog.attributes('-topmost', True)
+        dialog.geometry("250x120")
+        dialog.resizable(False, False)
+        dialog.configure(bg='white')
+
+        # 居中显示
+        x = self.root.winfo_x()
+        y = self.root.winfo_y()
+        dialog.geometry(f"+{x}+{y-130}")
+
+        # 标签
+        tk.Label(dialog, text="Interval (seconds):", bg='white', font=('Arial', 11)).pack(pady=(15, 5))
+
+        # 输入框
+        entry = tk.Entry(dialog, font=('Arial', 12), justify='center', width=10)
+        entry.pack(pady=5)
+        entry.insert(0, str(self.interval))
+        entry.select_range(0, tk.END)
+        entry.focus()
+
+        def confirm():
+            try:
+                val = float(entry.get())
+                if val > 0:
+                    self.interval = val
+                    self.root.title(f"Auto Clicker ({self.count}) [{self.interval}s]")
+                    dialog.destroy()
+            except ValueError:
+                pass
+
+        # 回车确认
+        entry.bind('<Return>', lambda e: confirm())
+
+        # 确认按钮
+        tk.Button(dialog, text="OK", command=confirm, font=('Arial', 10), width=8).pack(pady=10)
 
     def toggle_pause(self, event=None):
         """右键切换暂停/继续"""
@@ -142,7 +198,7 @@ class AutoClicker:
     def auto_click(self):
         while self.running and not self._stop_event.is_set():
             # 用Event等待，可中断
-            if self._stop_event.wait(timeout=10):
+            if self._stop_event.wait(timeout=self.interval):
                 break
             if not self.running or self.paused:
                 continue
@@ -150,7 +206,7 @@ class AutoClicker:
             click_and_enter(x, y, self.hide_window, self.show_window)
             self.count += 1
             try:
-                self.root.title(f"Auto Clicker ({self.count})")
+                self.root.title(f"Auto Clicker ({self.count}) [{self.interval}s]")
             except Exception:
                 pass
 
@@ -165,7 +221,7 @@ class AutoClicker:
         self.root.mainloop()
 
 if __name__ == '__main__':
-    # zyc - Auto Confirm Dot v1.0.0
+    # zyc - Auto Confirm Dot v1.1.0
     # GitHub: zycgeniuszycgenius
     app = AutoClicker()
     app.run()
