@@ -87,12 +87,12 @@ class AutoClicker:
         self.interval = config["interval"]
         self.click_back = config["click_back"]
 
-        # 窗口大小，位置随机偏移避免重叠
+        # 窗口大小，初始位置在屏幕中间
         self.size = 50
         screen_w = self.root.winfo_screenwidth()
         screen_h = self.root.winfo_screenheight()
-        offset_x = random.randint(50, max(100, screen_w - 100))
-        offset_y = random.randint(50, max(100, screen_h - 100))
+        offset_x = (screen_w - self.size) // 2
+        offset_y = (screen_h - self.size) // 2
         self.root.geometry(f"{self.size}x{self.size}+{offset_x}+{offset_y}")
         self.root.configure(bg='black')
 
