@@ -5,6 +5,7 @@ import threading
 import time
 import os
 import random
+import json
 import atexit
 
 # Windows API
@@ -13,8 +14,26 @@ user32 = ctypes.windll.user32
 # Author: zyc - Auto Confirm Dot
 # Created by zycgeniuszycgenius
 __author__ = "zyc"
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 __zyc_watermark__ = "zyc"  # Electronic watermark by zyc
+
+# 配置文件路径
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+
+def load_config():
+    """加载配置"""
+    default = {"interval": 10.0, "click_back": True}
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, "r") as f:
+                config = json.load(f)
+                return {
+                    "interval": float(config.get("interval", 10.0)),
+                    "click_back": bool(config.get("click_back", True))
+                }
+    except Exception:
+        pass
+    return default
 
 def get_cursor_pos():
     """获取当前鼠标位置"""
@@ -22,7 +41,7 @@ def get_cursor_pos():
     user32.GetCursorPos(ctypes.byref(point))
     return point.x, point.y
 
-def click_and_enter(x, y, hide_func, show_func):
+def click_and_enter(x, y, hide_func, show_func, click_back=True):
     # 记录鼠标原位置
     orig_x, orig_y = get_cursor_pos()
 
@@ -42,11 +61,14 @@ def click_and_enter(x, y, hide_func, show_func):
     user32.keybd_event(0x0D, 0, 0x0002, 0)  # Enter up
     time.sleep(0.05)
 
-    # 鼠标移回原位并点击（选中原来的窗口）
+    # 鼠标移回原位
     user32.SetCursorPos(orig_x, orig_y)
     time.sleep(0.05)
-    user32.mouse_event(0x0002, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTDOWN
-    user32.mouse_event(0x0004, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTUP
+
+    # 是否点击原位置
+    if click_back:
+        user32.mouse_event(0x0002, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTDOWN
+        user32.mouse_event(0x0004, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTUP
 
     # 恢复圆点窗口（回主线程执行）
     show_func()
@@ -59,6 +81,11 @@ class AutoClicker:
         self.root.attributes('-topmost', True)
         self.root.attributes('-transparentcolor', 'black')
         self.root.overrideredirect(True)
+
+        # 加载配置
+        config = load_config()
+        self.interval = config["interval"]
+        self.click_back = config["click_back"]
 
         # 窗口大小，位置随机偏移避免重叠
         self.size = 50
@@ -78,18 +105,16 @@ class AutoClicker:
         self.paused = True
         self.running = True
         self.count = 0
-        self.interval = 10.0  # 默认间隔10秒
         self._stop_event = threading.Event()
         self._zyc_instance_tag = "zyc"  # Instance watermark
 
         # 拖动相关
-        self.drag_data = {'x': 0, 'y': 0, 'moved': False}
+        self.drag_data = {'x': 0, 'y': 0}
 
         # 事件绑定
-        self.canvas.bind('<Button-1>', self.on_left_click)
-        self.canvas.bind('<B1-Motion>', self.on_drag)
-        self.canvas.bind('<ButtonRelease-1>', self.on_left_release)
-        self.canvas.bind('<Button-3>', self.show_interval_dialog)   # 右键设置间隔
+        self.canvas.bind('<Button-1>', self.start_drag)
+        self.canvas.bind('<B1-Motion>', self.do_drag)
+        self.canvas.bind('<Button-3>', self.toggle_pause)   # 右键暂停/继续
         self.canvas.bind('<Double-Button-1>', self.stop_program)  # 双击关闭
 
         # 标记文件（每个实例独立）
@@ -105,6 +130,9 @@ class AutoClicker:
         self.thread = threading.Thread(target=self.auto_click, daemon=True)
         self.thread.start()
 
+        # 定时重新加载配置
+        self.reload_config()
+
     def cleanup_marker(self):
         """清理标记文件"""
         try:
@@ -113,66 +141,26 @@ class AutoClicker:
         except Exception:
             pass
 
-    def on_left_click(self, event):
-        """左键按下"""
+    def reload_config(self):
+        """定时重新加载配置"""
+        try:
+            config = load_config()
+            self.interval = config["interval"]
+            self.click_back = config["click_back"]
+            self.root.title(f"Auto Clicker ({self.count}) [{self.interval}s]")
+        except Exception:
+            pass
+        # 每2秒检查一次配置
+        self.root.after(2000, self.reload_config)
+
+    def start_drag(self, event):
         self.drag_data['x'] = event.x
         self.drag_data['y'] = event.y
-        self.drag_data['moved'] = False
 
-    def on_drag(self, event):
-        """拖动"""
-        dx = event.x - self.drag_data['x']
-        dy = event.y - self.drag_data['y']
-        if abs(dx) > 3 or abs(dy) > 3:
-            self.drag_data['moved'] = True
-        x = self.root.winfo_x() + dx
-        y = self.root.winfo_y() + dy
+    def do_drag(self, event):
+        x = self.root.winfo_x() + (event.x - self.drag_data['x'])
+        y = self.root.winfo_y() + (event.y - self.drag_data['y'])
         self.root.geometry(f"+{x}+{y}")
-
-    def on_left_release(self, event):
-        """左键释放，如果没移动则暂停/继续"""
-        if not self.drag_data['moved']:
-            self.toggle_pause()
-
-    def show_interval_dialog(self):
-        """显示间隔设置对话框"""
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Set Interval")
-        dialog.attributes('-topmost', True)
-        dialog.geometry("250x120")
-        dialog.resizable(False, False)
-        dialog.configure(bg='white')
-
-        # 居中显示
-        x = self.root.winfo_x()
-        y = self.root.winfo_y()
-        dialog.geometry(f"+{x}+{y-130}")
-
-        # 标签
-        tk.Label(dialog, text="Interval (seconds):", bg='white', font=('Arial', 11)).pack(pady=(15, 5))
-
-        # 输入框
-        entry = tk.Entry(dialog, font=('Arial', 12), justify='center', width=10)
-        entry.pack(pady=5)
-        entry.insert(0, str(self.interval))
-        entry.select_range(0, tk.END)
-        entry.focus()
-
-        def confirm():
-            try:
-                val = float(entry.get())
-                if val > 0:
-                    self.interval = val
-                    self.root.title(f"Auto Clicker ({self.count}) [{self.interval}s]")
-                    dialog.destroy()
-            except ValueError:
-                pass
-
-        # 回车确认
-        entry.bind('<Return>', lambda e: confirm())
-
-        # 确认按钮
-        tk.Button(dialog, text="OK", command=confirm, font=('Arial', 10), width=8).pack(pady=10)
 
     def toggle_pause(self, event=None):
         """右键切换暂停/继续"""
@@ -203,7 +191,7 @@ class AutoClicker:
             if not self.running or self.paused:
                 continue
             x, y = self.get_center_position()
-            click_and_enter(x, y, self.hide_window, self.show_window)
+            click_and_enter(x, y, self.hide_window, self.show_window, self.click_back)
             self.count += 1
             try:
                 self.root.title(f"Auto Clicker ({self.count}) [{self.interval}s]")
@@ -221,7 +209,7 @@ class AutoClicker:
         self.root.mainloop()
 
 if __name__ == '__main__':
-    # zyc - Auto Confirm Dot v1.1.0
+    # zyc - Auto Confirm Dot v1.2.0
     # GitHub: zycgeniuszycgenius
     app = AutoClicker()
     app.run()
