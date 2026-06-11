@@ -1,9 +1,8 @@
 @echo off
-python --version >nul 2>&1
+pythonw --version >nul 2>&1
 if errorlevel 1 (
-    echo 未检测到Python，请先安装Python 3.6+
-    echo 下载地址：https://www.python.org/downloads/
+    echo Python not found. Please install Python 3.6+
     pause
     exit /b 1
 )
-python "%~dp0auto_enter.py"
+start "" pythonw "%~dp0auto_enter.py"
