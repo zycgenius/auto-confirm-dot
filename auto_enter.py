@@ -89,7 +89,7 @@ class AutoClicker:
         self.canvas.bind('<Button-1>', self.on_left_click)
         self.canvas.bind('<B1-Motion>', self.on_drag)
         self.canvas.bind('<ButtonRelease-1>', self.on_left_release)
-        self.canvas.bind('<Button-3>', self.toggle_pause)   # 右键暂停/继续
+        self.canvas.bind('<Button-3>', self.show_interval_dialog)   # 右键设置间隔
         self.canvas.bind('<Double-Button-1>', self.stop_program)  # 双击关闭
 
         # 标记文件（每个实例独立）
@@ -130,9 +130,9 @@ class AutoClicker:
         self.root.geometry(f"+{x}+{y}")
 
     def on_left_release(self, event):
-        """左键释放，如果没移动则弹出设置"""
+        """左键释放，如果没移动则暂停/继续"""
         if not self.drag_data['moved']:
-            self.show_interval_dialog()
+            self.toggle_pause()
 
     def show_interval_dialog(self):
         """显示间隔设置对话框"""
